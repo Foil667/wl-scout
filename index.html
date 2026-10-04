@@ -291,17 +291,30 @@ async function scan(){
   showBanner("Scan failed: "+e.message+" — the chain legs are down, so no 'no mints' verdict is shown.",true);
  }finally{btn.disabled=false;btn.textContent='SCAN WALLET';}
 }
-/* ---------- feeds (best effort, CORS may block) ---------- */
+/* ---------- feeds (live with baked-snapshot fallback) ---------- */
 async function loadFeeds(){
  const el=document.getElementById('feedrows');el.innerHTML="loading…";
+ const render=(live,src)=>{el.innerHTML=(live.length?live.map(x=>`<div class="prow"><div class="ph"><span class="pname">${x.twitter||"raffle"}</span><span class="chip CHECKER">LIVE RAFFLE</span></div><div class="why">${x.winners||"?"} winners · ${x.entrants||"?"} entrants · ${x.gtd?"GTD ":""}${x.fcfs?"FCFS":""} · mint ${x.mint_eth??"?"} ETH · draw ${x.ts?new Date(x.ts*1000).toUTCString():"?"}</div></div>`).join(""):"No live raffles in the feed right now.")+`<div style="margin-top:8px;font-size:11px;color:var(--dim)">${src}</div>`;};
+ const fetchLive=async()=>{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),15000);
+  try{const r=await fetch("https://cdn.neverfuckingtrade.com/raffles/data.json?t="+Date.now(),{signal:ctl.signal});
+   if(!r.ok)throw new Error("http "+r.status);const j=await r.json();return (j.base&&j.base.raffles)||[];}
+  finally{clearTimeout(to);}};
  try{
-  const r=await fetch("https://cdn.neverfuckingtrade.com/raffles/data.json?t="+Date.now(),{headers:{"User-Agent":"Mozilla/5.0"}});
-  if(!r.ok)throw new Error("http "+r.status);
-  const j=await r.json();const list=(j.base&&j.base.raffles)||[];
-  const live=list.filter(x=>x.live).slice(0,12);
+  const list=await fetchLive();
   setLeg("raffles-feed","ok");
-  el.innerHTML=live.length?live.map(x=>`<div class="prow"><div class="ph"><span class="pname">${x.twitter||"raffle"}</span><span class="chip CHECKER">LIVE RAFFLE</span></div><div class="why">${x.winners||"?"} winners · ${x.entrants||"?"} entrants · ${x.gtd?"GTD ":""}${x.fcfs?"FCFS":""} · mint ${x.mint_eth??"?"} ETH · draw ${x.ts?new Date(x.ts*1000).toUTCString():"?"}</div></div>`).join(""):"No live raffles in the feed right now.";
- }catch(e){setLeg("raffles-feed","degraded",e.message);el.innerHTML="Feed leg degraded (cross-origin blocked or offline): "+e.message+" — onchain scan results above are unaffected.";}
+  render(list.filter(x=>x.live).slice(0,12),"source: live raffle feed");
+ }catch(e1){
+  try{ // one retry, then baked snapshot
+   const list=await fetchLive();
+   setLeg("raffles-feed","ok");render(list.filter(x=>x.live).slice(0,12),"source: live raffle feed (retry)");
+  }catch(e2){
+   try{const s=await (await fetch("feeds.json?t="+Date.now())).json();
+    const live=(s.raffles&&s.raffles.live)||[];
+    setLeg("raffles-feed","ok");
+    render(live.slice(0,12),"source: cached snapshot "+(s.fetched_at?new Date(s.fetched_at).toUTCString():"")+" — live fetch failed ("+(e2.message||"offline")+")");
+   }catch(e3){setLeg("raffles-feed","degraded",e3.message);el.innerHTML="Feed leg unavailable (live + cached both failed): "+(e3.message||"offline")+" — onchain scan results are unaffected.";}
+  }
+ }
 }
 /* ---------- local subscriptions ---------- */
 function saveSub(){

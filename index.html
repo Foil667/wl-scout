@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WL Scout — is my wallet whitelisted?</title>
+<meta name="description" content="WL Scout: paste an EVM address, pick Robinhood Chain or Base, and see which tracked WL/allowlist/GTD projects your wallet is eligible for — verified onchain. Read-only.">
+<style>
+:root{--bg:#0a0f0a;--panel:#10160f;--line:#23301f;--neon:#ccff00;--dim:#8a9a7a;--amber:#ffb300;--red:#ff5252;--gray:#9aa39a;--txt:#e8f0e0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.5;
+background-image:linear-gradient(rgba(204,255,0,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(204,255,0,.025) 1px,transparent 1px);background-size:28px 28px;min-height:100vh;padding-bottom:110px}
+h1,h2,h3,.disp{font-family:"Chakra Petch","Arial Black",sans-serif;letter-spacing:.06em}
+.wrap{max-width:860px;margin:0 auto;padding:18px 14px}
+header.top{border-top:4px solid var(--neon);background:rgba(16,22,15,.92);border:1px solid var(--line);border-left:none;border-right:none;padding:18px 14px;margin-bottom:14px}
+header.top h1{font-size:26px;color:var(--neon);text-shadow:0 0 14px rgba(204,255,0,.45)}
+header.top p{color:var(--dim);font-size:12px;margin-top:6px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px;margin-bottom:14px}
+.card h3{font-size:13px;color:var(--dim);letter-spacing:.18em;margin-bottom:10px}
+label{display:block;font-size:11px;letter-spacing:.18em;color:var(--dim);margin:10px 0 6px}
+input[type=text],select{width:100%;background:#0c120c;border:1px solid var(--line);color:var(--txt);padding:12px;font-family:inherit;font-size:14px}
+input[type=text]:focus,select:focus{outline:1px solid var(--neon)}
+button.scan{width:100%;margin-top:14px;background:var(--neon);color:#0a0f0a;border:none;padding:16px;font-family:"Chakra Petch",sans-serif;font-weight:800;font-size:18px;letter-spacing:.14em;cursor:pointer;box-shadow:0 0 22px rgba(204,255,0,.35)}
+button.scan:hover{filter:brightness(1.08)}
+button.scan:disabled{opacity:.5;cursor:wait}
+.banner{border:1px solid var(--amber);color:var(--amber);padding:12px;font-size:12px;margin-bottom:14px;display:none}
+.banner.err{border-color:var(--red);color:var(--red)}
+.health{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:11px}
+.leg{display:flex;align-items:center;gap:6px;border:1px solid var(--line);padding:6px 10px;color:var(--dim)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--gray)}
+.dot.ok{background:var(--neon);box-shadow:0 0 8px var(--neon)}
+.dot.deg{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.dot.down{background:var(--red);box-shadow:0 0 8px var(--red)}
+.wbar{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);margin-bottom:14px}
+.wbar>div{padding:12px;border-bottom:1px solid var(--line)}
+.wbar>div:nth-child(odd){border-right:1px solid var(--line)}
+.wbar .k{font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.wbar .v{font-size:15px;margin-top:4px;word-break:break-all}
+.wbar .v.big{color:var(--neon);font-weight:700}
+h2.sec{font-size:15px;color:var(--neon);letter-spacing:.2em;margin:22px 0 10px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.prow{border:1px solid var(--line);background:var(--panel);margin-bottom:10px;padding:12px;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+.prow .ph{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.prow .pname{font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:15px}
+.prow .paddr{font-size:11px;color:var(--dim);word-break:break-all;margin-top:4px}
+.chip{font-family:"Chakra Petch",sans-serif;font-size:11px;font-weight:800;letter-spacing:.12em;padding:5px 10px;border:1px solid;white-space:nowrap}
+.chip.ELIGIBLE{color:#0a0f0a;background:var(--neon);border-color:var(--neon);box-shadow:0 0 12px rgba(204,255,0,.5)}
+.chip.CHECKER{color:var(--amber);border-color:var(--amber)}
+.chip.UNKNOWN{color:var(--gray);border-color:var(--gray)}
+.chip.NOT_ELIGIBLE,.chip.INELIGIBLE_BY_GATE{color:var(--red);border-color:var(--red)}
+.prow .why{font-size:12px;color:var(--dim);margin-top:8px}
+.prow .meta{font-size:11px;color:var(--dim);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap}
+.prow .meta a{color:var(--neon);text-decoration:none}
+.stale{font-size:10px;color:var(--amber);border:1px solid var(--amber);padding:2px 6px;letter-spacing:.1em}
+nav.bottom{position:fixed;bottom:0;left:0;right:0;background:rgba(10,15,10,.96);border-top:1px solid var(--line);display:flex;z-index:50}
+nav.bottom button{flex:1;background:none;border:none;color:var(--dim);font-family:"Chakra Petch",sans-serif;font-size:12px;letter-spacing:.14em;padding:16px 4px;cursor:pointer}
+nav.bottom button.on{color:var(--neon);box-shadow:inset 0 2px 0 var(--neon)}
+.tab{display:none}.tab.on{display:block}
+.checklist{list-style:none;margin-top:8px;font-size:12px}
+.checklist li{margin:6px 0;display:flex;gap:8px;align-items:flex-start}
+.checklist a{color:var(--neon);text-decoration:none}
+footer{color:var(--dim);font-size:11px;text-align:center;margin-top:30px;padding:0 14px}
+footer b{color:var(--neon)}
+.spin{display:inline-block;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+a{color:var(--neon)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+<h1>WL SCOUT</h1>
+<p>is my wallet whitelisted? — paste an address, pick a chain, get onchain-verified verdicts.<br>
+read-only · no wallet connection · no signing · eligibility for offchain allowlists is decided by each project — WL Scout verifies what the chain can prove.</p>
+</header>
+
+<div class="banner" id="banner"></div>
+<div class="health" id="health"></div>
+
+<div class="tab on" id="tab-scan">
+<div class="card">
+<h3>PUBLIC WALLET ADDRESS</h3>
+<label for="addr">WALLET ADDRESS</label>
+<input type="text" id="addr" placeholder="0x..." spellcheck="false" autocomplete="off">
+<label for="chain">CHAIN</label>
+<select id="chain">
+<option value="4663">Robinhood · 4663</option>
+<option value="8453">Base · 8453</option>
+</select>
+<button class="scan" id="scanbtn" onclick="scan()">SCAN WALLET</button>
+</div>
+
+<div class="wbar" id="wbar" style="display:none">
+<div><div class="k">WALLET</div><div class="v" id="w-addr">—</div></div>
+<div><div class="k">BALANCE</div><div class="v" id="w-bal">—</div></div>
+<div><div class="k">BLOCK</div><div class="v" id="w-block">—</div></div>
+<div><div class="k">CCFF00 PROOF</div><div class="v big" id="w-sq">—</div></div>
+</div>
+
+<h2 class="sec" id="vqhead" style="display:none">VERDICT QUEUE — <span id="vcount"></span> tracked gates</h2>
+<div id="rows"></div>
+</div>
+
+<div class="tab" id="tab-feeds">
+<div class="card"><h3>FEEDS — BEST EFFORT</h3>
+<p style="font-size:12px;color:var(--dim)">Live raffle + radar feeds load client-side when the source allows cross-origin reads. If blocked, the leg shows degraded — onchain scan results are unaffected.</p>
+<div id="feedrows" style="margin-top:10px;font-size:12px">Not loaded yet — run a scan first, or press below.<br><br><button class="scan" style="font-size:13px;padding:10px" onclick="loadFeeds()">LOAD FEEDS</button></div>
+</div>
+</div>
+
+<div class="tab" id="tab-alerts">
+<div class="card"><h3>ALERT SUBSCRIPTIONS — LOCAL ONLY</h3>
+<p style="font-size:12px;color:var(--dim)">This static build has no server: subscriptions live in this browser's localStorage only. No push delivery. For real push alerts, use the hosted WL Scout app + @Foil667bot.</p>
+<label>ADDRESS TO WATCH</label><input type="text" id="sub-addr" placeholder="0x...">
+<label>ALERT ME ABOUT</label>
+<div style="font-size:12px;margin-top:6px" id="sub-types">
+<label style="display:inline"><input type="checkbox" checked value="opens"> WL phase opens</label><br>
+<label style="display:inline"><input type="checkbox" checked value="ending"> ending &lt; 24h</label><br>
+<label style="display:inline"><input type="checkbox" checked value="ccff00"> new CCFF00-gated mint</label><br>
+<label style="display:inline"><input type="checkbox" checked value="raffle"> raffle deadlines</label>
+</div>
+<button class="scan" style="font-size:13px;padding:10px" onclick="saveSub()">SAVE SUBSCRIPTION (LOCAL)</button>
+<div id="sublist" style="margin-top:10px;font-size:12px"></div>
+</div>
+</div>
+
+<div class="tab" id="tab-help">
+<div class="card"><h3>HOW VERDICTS WORK</h3>
+<div style="font-size:12px;color:var(--dim)">
+<p><b style="color:var(--neon)">ELIGIBLE</b> — holder gate proven onchain (e.g. you hold a CCFF00 square). A verified fact.</p>
+<p><b style="color:var(--red)">NOT ELIGIBLE / INELIGIBLE_BY_GATE</b> — onchain proof you don't meet the gate (e.g. needs 4 squares, you hold 1).</p>
+<p><b style="color:var(--amber)">CHECKER</b> — an offchain allowlist phase exists; only the project's own checker/API knows membership. The app links it and never fakes green.</p>
+<p><b style="color:var(--gray)">UNKNOWN</b> — phase metadata known but no checker route, or a data leg failed.</p>
+<p style="margin-top:8px">Onchain legs: SeaDrop <span style="color:var(--neon)">getPublicDrop</span> (0xbc6a629c) + <span style="color:var(--neon)">allowListMerkleRoot</span> (0x32bf11f5) on canonical + RH fork, holder gates via <span style="color:var(--neon)">balanceOf</span> (0x70a08231) / <span style="color:var(--neon)">ownerOf</span> (0x6352211e). OpenSea API leg is dropped in this static build (no API key ships in client code) — onchain legs carry the verdicts.</p>
+<p style="margin-top:8px">ETH ≈ $<span id="ethpx"></span> (hardcoded reference, labeled approximate).</p>
+</div></div>
+</div>
+
+<footer>
+<b>WL SCOUT</b> · static edition · built by <a href="https://x.com/Foil667">Foil (Looper #667)</a><br>
+Eligibility for offchain allowlists is decided by each project. WL Scout verifies what the chain can prove.<br>
+<a href="https://github.com/Foil667/wl-scout">source on GitHub</a>
+</footer>
+</div>
+
+<nav class="bottom">
+<button class="on" onclick="showTab('scan',this)">SCAN</button>
+<button onclick="showTab('feeds',this)">FEEDS</button>
+<button onclick="showTab('alerts',this)">ALERTS</button>
+<button onclick="showTab('help',this)">HELP</button>
+</nav>
+
+<script>
+"use strict";
+/* ---------- config ---------- */
+const CHAINS={
+ "4663":{name:"Robinhood",rpcs:["https://robinhood-rpc.publicnode.com","https://rpc.mainnet.chain.robinhood.com","https://rpc.nodeflare.app/robinhood/public"],explorer:"https://explorer.robinhood.com/address/",opensea:"https://opensea.io/assets/robinhood/"},
+ "8453":{name:"Base",rpcs:["https://mainnet.base.org","https://base-rpc.publicnode.com","https://base.meowrpc.com"],explorer:"https://basescan.org/address/",opensea:"https://opensea.io/assets/base/"}
+};
+const SEADROP_CANON="0x00005EA00Ac477B1030CE78506496e8C2dE24bf5";
+const SEADROP_FORK="0x00005ea00ac477b1030ce78506496e8c2de24bf5";
+const SQUARES="0x505A22Ffed8d37ebE580FfD98d2Cdb0021189146";
+const SQ4429=4429;
+const SEL_PUB="0xbc6a629c", SEL_ROOT="0x32bf11f5", SEL_BAL="0x70a08231", SEL_OWNER="0x6352211e";
+const ETH_USD=2700; document.getElementById('ethpx').textContent=ETH_USD.toLocaleString();
+const PROJECTS=[{"name": "BroostersNFT", "contract": "0xad56e25c6267e48bc5da326c1b2b7133107b6e4b", "chain": "robinhood", "status": "armed", "gate": "ccff00-holder", "gateNeed": 1, "why": "CCFF00 allowlist phase \u2014 holder gate verified onchain"}, {"name": "Trenchstrokerz", "contract": "0x7035a8dc2489c33dbfd4de9de12f65b010cfe824", "chain": "robinhood", "status": "watching", "gate": "ccff00-holder", "gateNeed": 1, "why": "CCFF00 free x1 stage 2026-10-10 04:15 UTC"}, {"name": "Pixel Cats on Drugs", "contract": "0xc3652a719ed2b5e2543693a9d7869b93231ba24d", "chain": "robinhood", "status": "watching", "gate": "ccff00-holder", "gateNeed": 4, "why": "CCFF00 stage requires 4+ squares"}, {"name": "0xa0412bbfbdcc79ca9e824ac7ddd216ab7736df7a", "contract": "0xa0412bbfbdcc79ca9e824ac7ddd216ab7736df7a", "chain": "robinhood", "status": "claimed+forwarded", "gate": "ccff00-holder"}, {"name": "3D JIGGLETTES", "contract": "0x59207467ec308e2eb048f8d6610d28a1173b75cc", "chain": "robinhood", "status": "blocked", "gate": "ccff00-holder"}, {"name": "aerent", "contract": "0xa655bbe47a8dec02991452adc7bef76bbbeceee9", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "blips", "contract": "0xeccbb32328c19fa2e6c90fde3a8a5fce1f105241", "chain": "robinhood", "status": "watching/lead-only", "gate": "ccff00-holder"}, {"name": "block-fighter-alpha", "contract": "0xb05579d31f26f86067950c22c5c09c8431b9920b", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "ccff00-rubik", "contract": "0xcc9e69be69edf5dd59c11f8822d9ac769408e711", "chain": "robinhood", "status": "watch", "gate": "ccff00-holder"}, {"name": "ccff00-worlds", "contract": "0x73e42f64ab253a24d3e7733d8baad53cfeebeb52", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "chainpixs", "contract": "0xa056b43d0bedd7982b6f80621da300333ecb4402", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "early-men-origins", "contract": "0x143e2b4be0fe46e6318ecf42054a46a46e3e1241", "chain": "robinhood", "status": "watch", "gate": "unknown"}, {"name": "eq-228049572", "contract": "0x40c6b16b7436efd90b4c2c1ef6d1004079048cd0", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "facetsart", "contract": "0xa219558e037063879315d6c0dc37aa29e1ed9f07", "chain": "robinhood", "status": "watch", "gate": "unknown"}, {"name": "ff9a00-jacks", "contract": "0x774ca2da605548c21484ee396ffc07e5604907b1", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "franky-blind-box", "contract": "0x32d66eb2ba4c3529218e28733a6471c8c22299a6", "chain": "robinhood", "status": "watch", "gate": "unknown"}, {"name": "jpeg-frens", "contract": "0xe31703379e32cad7502a594a854a76f9bb0be0e5", "chain": "robinhood", "status": "watch", "gate": "unknown"}, {"name": "little-guys", "contract": "0x797d93d5a2497a062bdc823f56a3571b0893b635", "chain": "robinhood", "status": "claimed-forwarded", "gate": "ccff00-holder"}, {"name": "magical-book-665779445", "contract": "0x5177828dfddab0e4157363a9bca8470344ab6885", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "minersonrh", "contract": "0xbc391c263622875bd532b20aaebabf08d19b056f", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "pals-pass-679989200", "contract": "0xae94755b30d8a6c634ce1e93609195ad328f8916", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "regulars-frontera", "contract": "0x19cd2690fefb349f47f224f14f62cabe53b25e0f", "chain": "robinhood", "status": "watch", "gate": "unknown"}, {"name": "rlic-book", "contract": "0x53a4181db6641d09cdfbbda47747fe71b4b3b9de", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "roomies-906892243", "contract": "0xf7e20f766cb0f6826d445a48636545dbb30b3146", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "runup-nft", "contract": "0x07f91ea8483c452368c175424d947d674cba9292", "chain": "robinhood", "status": "watching", "gate": "unknown"}, {"name": "shadow-realms-genesis", "contract": "0xf2e46b9738a334294537f36a6904754929abeba8", "chain": "robinhood", "status": "gone-off-radar", "gate": "ccff00-holder"}, {"name": "skull-625185005", "contract": "0xdefd91722579da5c5cddcf4036f50bcf8b12e2a9", "chain": "robinhood", "status": "gone-off-radar", "gate": "ccff00-holder"}, {"name": "tamper-749097386", "contract": "0x041ec9bf7f68d6ac95cd56071ceb34d4cdf9eced", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "underwater-crab", "contract": "0x58153834811603b8aa63b70688dda5c8fe13a31e", "chain": "robinhood", "status": "lead-only", "gate": "ccff00-holder"}, {"name": "vayan-alliance-rh", "contract": "0x7e3179a912868660b1ae8843b7e0a70734fb5e81", "chain": "robinhood", "status": "watching", "gate": "unknown"}];
+/* ---------- rpc with failover ---------- */
+const legStatus={};
+function setLeg(name,st,err){legStatus[name]={st,err:err||"",ts:new Date().toISOString()};renderHealth();}
+async function rpcBatch(chainId,calls){
+ const ch=CHAINS[chainId];let lastErr="";
+ for(const url of ch.rpcs){
+  for(const wait of [0,500,2000,8000]){
+   if(wait)await new Promise(r=>setTimeout(r,wait));
+   try{
+    const body=calls.map((c,i)=>({jsonrpc:"2.0",id:i,method:c.method,params:c.params}));
+    const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),20000);
+    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","User-Agent":"Mozilla/5.0"},body:JSON.stringify(body),signal:ctl.signal});
+    clearTimeout(to);
+    if(!res.ok)throw new Error("http "+res.status);
+    const j=await res.json();
+    const arr=Array.isArray(j)?j:[j];
+    for(const r of arr)if(r.error)throw new Error(r.error.message||"rpc error");
+    setLeg(chainId+"-rpc","ok");return arr.map(r=>r.result);
+   }catch(e){lastErr=e.message||String(e);}
+  }
+ }
+ setLeg(chainId+"-rpc","down",lastErr);throw new Error("all RPC endpoints failed: "+lastErr);
+}
+function encAddr(sel,a){return sel+a.toLowerCase().replace("0x","").padStart(64,"0");}
+function encUint(sel,n){return sel+BigInt(n).toString(16).padStart(64,"0");}
+function decUint(hex){return BigInt(hex);}
+function decAddr(hex){return "0x"+hex.slice(-40);}
+/* ---------- verdict engine ---------- */
+async function probeProject(chainId,proj,holderN){
+ const nft=proj.contract;
+ const mk=(to,data)=>({method:"eth_call",params:[{to,data},"latest"]});
+ try{
+  const [pubC,rootC,pubF,rootF]=await rpcBatch(chainId,[
+   mk(SEADROP_CANON,encAddr(SEL_PUB,nft)),mk(SEADROP_CANON,encAddr(SEL_ROOT,nft)),
+   mk(SEADROP_FORK,encAddr(SEL_PUB,nft)),mk(SEADROP_FORK,encAddr(SEL_ROOT,nft))]);
+  const phases=[];
+  for(const pub of [pubC,pubF]){
+   if(!pub||/^0x0{1,}$/.test(pub))continue;
+   const w=[];for(let i=0;i<6;i++)w.push(decUint("0x"+pub.slice(2+i*64,2+(i+1)*64)));
+   const [price,start,end,maxW]=w;
+   if(end===0n)continue;
+   phases.push({price,start:Number(start),end:Number(end),maxW:Number(maxW)});
+  }
+  const root=rootC&&!/^0x0{1,}$/.test(rootC)?rootC:(rootF&&!/^0x0{1,}$/.test(rootF)?rootF:null);
+  const now=Math.floor(Date.now()/1000);
+  const live=phases.filter(p=>p.start<=now&&now<=p.end);
+  const upcoming=phases.filter(p=>p.start>now).sort((a,b)=>a.start-b.start)[0];
+  const priceEth=live.length?Number(live[0].price)/1e18:(upcoming?Number(upcoming.price)/1e18:null);
+  let verdict="UNKNOWN",why="";
+  const need=proj.gateNeed||1;
+  if(proj.gate==="ccff00-holder"){
+   if(live.length){
+    if(holderN>=need){verdict="ELIGIBLE";why=`Live SeaDrop phase onchain · you hold ${holderN} CCFF00 square(s), gate needs ${need}. Verified by balanceOf.`;}
+    else{verdict=need>1?"INELIGIBLE_BY_GATE":"NOT ELIGIBLE";why=`Live SeaDrop phase onchain · gate needs ${need} square(s), you hold ${holderN}.`;}
+   }else if(root){verdict="CHECKER";why="Gated phase merkle root detected onchain — membership is offchain; only the project's checker knows.";}
+   else{verdict="UNKNOWN";why="No live SeaDrop phase onchain right now for this contract.";}
+  }else if(proj.gate==="checker"){
+   verdict="CHECKER";why="Known offchain-allowlist project — open the project's checker to confirm your spot.";
+  }else{
+   if(live.length){verdict="CHECKER";why="Live onchain phase with no known holder gate — check the project's own checker/announcement for WL terms.";}
+   else if(root){verdict="CHECKER";why="Gated phase merkle root detected onchain — membership is offchain.";}
+   else{verdict="UNKNOWN";why="No live SeaDrop phase onchain right now for this contract.";}
+  }
+  return {proj,live:live.length>0,upcoming,priceEth,root:!!root,verdict,why,stale:false};
+ }catch(e){return {proj,verdict:"UNKNOWN",why:"RPC leg failed for this contract — marked stale, not 'no mints'.",stale:true,live:false,priceEth:null};}
+}
+/* ---------- scan ---------- */
+function showBanner(msg,isErr){const b=document.getElementById('banner');b.style.display=msg?'block':'none';b.className='banner'+(isErr?' err':'');b.textContent=msg||'';}
+function renderHealth(){
+ const el=document.getElementById('health');el.innerHTML="";
+ for(const [k,v] of Object.entries(legStatus)){
+  const d=document.createElement('div');d.className='leg';d.title=(v.err||"last ok "+v.ts);
+  d.innerHTML=`<span class="dot ${v.st==='ok'?'ok':v.st==='degraded'?'deg':'down'}"></span>${k}`;
+  el.appendChild(d);
+ }
+}
+function fmtT(s){s=Math.max(0,s);const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d>0?`${d}d ${h}h`:`${h}h ${m}m`;}
+async function scan(){
+ const addr=document.getElementById('addr').value.trim();
+ const chainId=document.getElementById('chain').value;
+ if(!/^0x[0-9a-fA-F]{40}$/.test(addr)){showBanner("Paste a valid 0x EVM address.",true);return;}
+ const btn=document.getElementById('scanbtn');btn.disabled=true;btn.innerHTML='<span class="spin">◌</span> SCANNING…';
+ showBanner("");document.getElementById('rows').innerHTML="";
+ const ch=CHAINS[chainId];
+ const list=PROJECTS.filter(p=>p.chain===(chainId==="4663"?"robinhood":"base"));
+ try{
+  const mk=(to,data)=>({method:"eth_call",params:[{to,data},"latest"]});
+  const [balHex,blockHex,balSqHex,owner4429]=await rpcBatch(chainId,[
+   {method:"eth_getBalance",params:[addr,"latest"]},{method:"eth_blockNumber",params:[]},
+   mk(SQUARES,encAddr(SEL_BAL,addr)),mk(SQUARES,encUint(SEL_OWNER,SQ4429))]);
+  const ethBal=Number(decUint(balHex))/1e18;
+  const sqN=Number(decUint(balSqHex));
+  const owns4429=decAddr(owner4429).toLowerCase()===addr.toLowerCase();
+  document.getElementById('wbar').style.display='grid';
+  document.getElementById('w-addr').textContent=addr.slice(0,10)+"…"+addr.slice(-8);
+  document.getElementById('w-bal').textContent=ethBal.toFixed(6)+" ETH";
+  document.getElementById('w-block').textContent=parseInt(blockHex,16).toLocaleString();
+  document.getElementById('w-sq').textContent=sqN+(sqN===1?" SQUARE":" SQUARES")+(owns4429?" · #4429 ✓":"");
+  const head=document.getElementById('vqhead');head.style.display='block';
+  document.getElementById('vcount').textContent=list.length;
+  const rows=document.getElementById('rows');
+  const holderN=(chainId==="4663")?sqN:0;
+  for(let i=0;i<list.length;i+=6){
+   const chunk=list.slice(i,i+6);
+   const res=await Promise.all(chunk.map(p=>probeProject(chainId,p,holderN)));
+   for(const r of res){
+    const d=document.createElement('div');d.className='prow';
+    const price=r.priceEth!=null?` · ${(r.priceEth).toFixed(6)} ETH (≈ $${(r.priceEth*ETH_USD).toFixed(2)})`:"";
+    let cd="";
+    if(r.live&&r.upcoming===undefined){/* live now */}
+    const nowS=Math.floor(Date.now()/1000);
+    d.innerHTML=`<div class="ph"><span class="pname">${r.proj.name}</span><span class="chip ${r.verdict}">${r.verdict.replace(/_/g," ")}</span></div>
+     <div class="paddr">${r.proj.contract} ${r.stale?'<span class="stale">STALE</span>':''}</div>
+     <div class="why">${r.why}</div>
+     <div class="meta">
+      ${r.live?`<span style="color:var(--neon)">● LIVE${price}</span>`:r.upcoming?`<span>upcoming ${new Date(r.upcoming.start*1000).toUTCString()}${price}</span>`:`<span>no live phase</span>`}
+      <a href="${ch.explorer}${r.proj.contract}" target="_blank" rel="noopener">explorer</a>
+      <a href="${ch.opensea}${r.proj.contract}/1" target="_blank" rel="noopener">opensea</a>
+     </div>`;
+    rows.appendChild(d);
+   }
+  }
+  showBanner("Scan complete — OpenSea metadata leg is dropped in this static build (no API key in client code); all verdicts are onchain.");
+ }catch(e){
+  showBanner("Scan failed: "+e.message+" — the chain legs are down, so no 'no mints' verdict is shown.",true);
+ }finally{btn.disabled=false;btn.textContent='SCAN WALLET';}
+}
+/* ---------- feeds (best effort, CORS may block) ---------- */
+async function loadFeeds(){
+ const el=document.getElementById('feedrows');el.innerHTML="loading…";
+ try{
+  const r=await fetch("https://cdn.neverfuckingtrade.com/raffles/data.json?t="+Date.now(),{headers:{"User-Agent":"Mozilla/5.0"}});
+  if(!r.ok)throw new Error("http "+r.status);
+  const j=await r.json();const list=(j.base&&j.base.raffles)||[];
+  const live=list.filter(x=>x.live).slice(0,12);
+  setLeg("raffles-feed","ok");
+  el.innerHTML=live.length?live.map(x=>`<div class="prow"><div class="ph"><span class="pname">${x.twitter||"raffle"}</span><span class="chip CHECKER">LIVE RAFFLE</span></div><div class="why">${x.winners||"?"} winners · ${x.entrants||"?"} entrants · ${x.gtd?"GTD ":""}${x.fcfs?"FCFS":""} · mint ${x.mint_eth??"?"} ETH · draw ${x.ts?new Date(x.ts*1000).toUTCString():"?"}</div></div>`).join(""):"No live raffles in the feed right now.";
+ }catch(e){setLeg("raffles-feed","degraded",e.message);el.innerHTML="Feed leg degraded (cross-origin blocked or offline): "+e.message+" — onchain scan results above are unaffected.";}
+}
+/* ---------- local subscriptions ---------- */
+function saveSub(){
+ const a=document.getElementById('sub-addr').value.trim();
+ if(!/^0x[0-9a-fA-F]{40}$/.test(a)){alert("valid 0x address please");return;}
+ const types=[...document.querySelectorAll('#sub-types input:checked')].map(i=>i.value);
+ const subs=JSON.parse(localStorage.getItem('wlscout_subs')||'[]');
+ subs.push({addr:a,types,ts:Date.now()});localStorage.setItem('wlscout_subs',JSON.stringify(subs));
+ renderSubs();
+}
+function renderSubs(){
+ const subs=JSON.parse(localStorage.getItem('wlscout_subs')||'[]');
+ document.getElementById('sublist').innerHTML=subs.length?subs.map((s,i)=>`<div>• ${s.addr.slice(0,10)}… — ${s.types.join(", ")} <a href="#" onclick="delSub(${i});return false">remove</a></div>`).join(""):"No local subscriptions.";
+}
+function delSub(i){const s=JSON.parse(localStorage.getItem('wlscout_subs')||'[]');s.splice(i,1);localStorage.setItem('wlscout_subs',JSON.stringify(s));renderSubs();}
+function showTab(name,btn){
+ document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+ document.getElementById('tab-'+name).classList.add('on');
+ document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.remove('on'));
+ btn.classList.add('on');
+ if(name==='alerts')renderSubs();
+}
+renderHealth();renderSubs();
+</script>
+</body>
+</html>

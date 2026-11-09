@@ -8,11 +8,27 @@ import { readFileSync, writeFileSync } from "node:fs";
 // eligibility rollup per wallet (OpenSea server-side WL lists are invisible to
 // our onchain SeaDrop probes) + per-drop CCFF00 gate / trust enrichment.
 // Pass --stray to enable. Budget-limited (hourly) — degrades gracefully.
+// Since ~Oct/Nov 2026 the Stray API requires a partner key we don't hold;
+// with --stray but no key configured, the Stray leg is skipped quietly
+// (stray = { skipped: "no-partner-key" }) and the first-party OpenSea leg
+// (--opensea, opensea-leg.mjs) is the replacement eligibility source.
 const USE_STRAY = process.argv.includes("--stray");
-let strayCheckWallet = null, strayFetchDrops = null;
+let strayCheckWallet = null, strayFetchDrops = null, strayHasKey = false;
 if (USE_STRAY) {
-  ({ checkWallet: strayCheckWallet, fetchDrops: strayFetchDrops } =
-    await import("./straycucks.mjs"));
+  const sm = await import("./straycucks.mjs");
+  strayCheckWallet = sm.checkWallet;
+  strayFetchDrops = sm.fetchDrops;
+  strayHasKey = sm.hasApiKey;
+}
+
+// Optional first-party OpenSea eligibility leg (opensea-leg.mjs): probes
+// POST /api/v2/drops/{slug}/mint per project slug — 200 = eligible (signed
+// payload returned by OpenSea, discarded unread), 422 = not allowlisted.
+// Pass --opensea to enable. Only projects with a known slug are probed.
+const USE_OPENSEA = process.argv.includes("--opensea");
+let osForWallet = null;
+if (USE_OPENSEA) {
+  ({ openseaForWallet: osForWallet } = await import("./opensea-leg.mjs"));
 }
 
 const SEADROP_CANON = "0x00005EA00Ac477B1030CE78506496e8C2dE24bf5";
@@ -95,8 +111,11 @@ async function scanWallet(addr) {
   });
 
   // Stray Cucks enrichment: per-drop CCFF00-gate/trust data + wallet rollup.
+  // No partner key configured → skip quietly, zero Stray network calls.
   let stray = null;
-  if (USE_STRAY && strayFetchDrops) {
+  if (USE_STRAY && !strayHasKey) {
+    stray = { skipped: "no-partner-key" };
+  } else if (USE_STRAY && strayFetchDrops) {
     try {
       const drops = await strayFetchDrops();
       const byAddr = {};
@@ -129,7 +148,14 @@ async function scanWallet(addr) {
       }
     } catch (e) { stray = { error: e.message || String(e) }; }
   }
-  return { addr, squares: holderN, ts: new Date().toISOString(), results, ...(stray ? { stray } : {}) };
+
+  // First-party OpenSea eligibility leg (only projects with a known slug).
+  let opensea = null;
+  if (USE_OPENSEA && osForWallet) {
+    try { opensea = await osForWallet(addr, PROJECTS); }
+    catch (e) { opensea = [{ error: e.message || String(e) }]; }
+  }
+  return { addr, squares: holderN, ts: new Date().toISOString(), results, ...(stray ? { stray } : {}), ...(opensea ? { opensea } : {}) };
 }
 
 const rawArgs = process.argv.slice(2);

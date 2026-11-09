@@ -10,10 +10,16 @@
 //      paid-mint-in-free-stage facts, creator-wallet clustering).
 //   3. /api/catalog — 3k+ collection index with ccff00/free/live/junk facets.
 //
-// RATE LIMITS (respect them): the site gates feed endpoints behind an
-// `x-sc-page: 1` header (403 "not-public" without it) and caps /api/check with
-// an hourly "checks-hour" budget. drops are cached 1h; wallet checks 30min.
+// RATE LIMITS (respect them): the site caps /api/check with an hourly
+// "checks-hour" budget. drops are cached 1h; wallet checks 30min.
 // Do NOT raise these frequencies without asking the user.
+//
+// ACCESS (changed ~Oct/Nov 2026, verified 2026-11-09): the old public
+// `x-sc-page: 1` header no longer grants access. The API now answers
+// 403 {"error":"key-required", ...} and requires a PARTNER KEY sent in the
+// `x-api-key` header ("ask the Stray Cucks team for one"). The key, once
+// obtained, lives ONLY in ~/.straycucks/api_key (0600) or the
+// STRAYCUCKS_API_KEY env var — never in this repo, never in logs.
 //
 // Usage:
 //   node straycucks.mjs --check 0x...        # eligibility rollup for one wallet
@@ -24,12 +30,38 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 
 const BASE = "https://allowlist.straycucks.com";
 const UA = "Mozilla/5.0 (compatible; WLScout/1.0; +straycucks-integration)";
-const HEADERS = { "User-Agent": UA, "x-sc-page": "1" };
+
+// Partner key: env first, then the 0600 key file. Absent key = the API's
+// key-required state, which getJSON reports distinctly (see below).
+function loadApiKey() {
+  if (process.env.STRAYCUCKS_API_KEY) return process.env.STRAYCUCKS_API_KEY.trim();
+  try {
+    const f = `${process.env.HOME}/.straycucks/api_key`;
+    if (existsSync(f)) return readFileSync(f, "utf8").trim() || null;
+  } catch { /* unreadable key file = no key */ }
+  return null;
+}
+const API_KEY = loadApiKey();
+const HEADERS = { "User-Agent": UA, "x-sc-page": "1", ...(API_KEY ? { "x-api-key": API_KEY } : {}) };
+export const hasApiKey = !!API_KEY;
 const CACHE_DIR = `${process.env.HOME}/workspace/goals/robinhood-chain-free-mint-watch/hidden_files/straycucks`;
 const DROPS_TTL = 3600_000;   // 1h
 const CHECK_TTL = 1800_000;   // 30min
 
 mkdirSync(CACHE_DIR, { recursive: true });
+
+// Classify an error response body so run logs describe the REAL state.
+// The pre-2026-11 code hardcoded "403 not-public (header rejected)" for
+// every 403, which hid the key-required paywall for ~2 weeks.
+export function classifyStrayError(status, bodyText) {
+  let err = null;
+  try { err = JSON.parse(bodyText || "")?.error || null; } catch { /* not JSON */ }
+  if (status === 403 && err === "key-required") {
+    return "STRAY_KEY_REQUIRED: allowlist.straycucks.com now requires a partner key in the x-api-key header (ask the Stray Cucks team for one); no key configured in ~/.straycucks/api_key";
+  }
+  if (status === 403) return `403 forbidden for Stray Cucks API (error=${err || "unknown"}): ${(bodyText || "").slice(0, 160)}`;
+  return null;
+}
 
 async function getJSON(path, { noStore = false } = {}) {
   const r = await fetch(BASE + path, {
@@ -37,8 +69,10 @@ async function getJSON(path, { noStore = false } = {}) {
     cache: noStore ? "no-store" : "default",
     signal: AbortSignal.timeout(30000),
   });
-  if (r.status === 403) throw new Error(`403 not-public for ${path} (header rejected)`);
-  if (!r.ok) throw new Error(`http ${r.status} for ${path}`);
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(classifyStrayError(r.status, body) || `http ${r.status} for ${path}`);
+  }
   return r.json();
 }
 

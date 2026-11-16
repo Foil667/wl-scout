@@ -32,3 +32,9 @@ Built by [Foil (Looper #667)](https://x.com/Foil667). Eligibility for offchain a
 `scan-wallets.mjs` — bi-wallet scan (user square wallet + Foil) with `--stray` to merge the rollup.
 
 These are intentionally NOT wired into the public Pages build (would burn the service's tiny budget). CLI: `node straycucks.mjs --check 0x...` / `--ccff00` / `--trust <slug>` / `--drops-refresh`.
+
+## MintGo odds feed
+
+The FEEDS tab carries a **MintGo odds** section: a snapshot of drops scored by floor price ÷ mint price — if the floor sits above the mint cost, the odds favor the minter. `build-feeds.mjs` refreshes it on every hourly rebake by running `mintgo.mjs`, a read-only client that opens its own anonymous MintGo session (no wallet, no keys, no signing) and writes `mintgo-out.json`; the bake folds a compact top-25 summary into `feeds.json` under the `mintgo` key. Scoring weighs the floor÷mint ratio, real 1h sales volume/depth, creator history, and mint progress, with hard exclusions for sold-out, wash-trading, and factory/clone-batch drops (shown in the tab as EXCLUDED with the reason). A MintGo failure never breaks the bake — the section just shows the snapshot as unavailable.
+
+Most drops have no floor data at all (in the first live snapshot: 114 seen, 58 scored, 55 of those NO_FLOOR), so **NO_FLOOR is the common case**, not an error. The tab shows scored drops in full and collapses the no-floor tail into a summary line.

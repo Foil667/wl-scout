@@ -105,6 +105,9 @@ read-only · no wallet connection · no signing · eligibility for offchain allo
 <div class="card"><h3>FEEDS — BEST EFFORT</h3>
 <p style="font-size:12px;color:var(--dim)">Live raffle + radar feeds load client-side when the source allows cross-origin reads. If blocked, the leg shows degraded — onchain scan results are unaffected.</p>
 <div id="feedrows" style="margin-top:10px;font-size:12px">Not loaded yet — run a scan first, or press below.<br><br><button class="scan" style="font-size:13px;padding:10px" onclick="loadFeeds()">LOAD FEEDS</button></div>
+<h3 style="margin-top:18px">MINTGO ODDS — floor vs mint (snapshot)</h3>
+<p style="font-size:12px;color:var(--dim)">Baked hourly by the read-only MintGo client: floor price ÷ mint price, with wash-trading, factory and sold-out drops excluded. Most drops carry no floor data — NO_FLOOR is the common case, not an error.</p>
+<div id="mintgorows" style="margin-top:10px;font-size:12px">Not loaded yet.</div>
 </div>
 </div>
 
@@ -293,6 +296,7 @@ async function scan(){
 }
 /* ---------- feeds (live with baked-snapshot fallback) ---------- */
 async function loadFeeds(){
+ loadMintgo();
  const el=document.getElementById('feedrows');el.innerHTML="loading…";
  const render=(live,src)=>{el.innerHTML=(live.length?live.map(x=>`<div class="prow"><div class="ph"><span class="pname">${x.twitter||"raffle"}</span><span class="chip CHECKER">LIVE RAFFLE</span></div><div class="why">${x.winners||"?"} winners · ${x.entrants||"?"} entrants · ${x.gtd?"GTD ":""}${x.fcfs?"FCFS":""} · mint ${x.mint_eth??"?"} ETH · draw ${x.ts?new Date(x.ts*1000).toUTCString():"?"}</div></div>`).join(""):"No live raffles in the feed right now.")+`<div style="margin-top:8px;font-size:11px;color:var(--dim)">${src}</div>`;};
  const fetchLive=async()=>{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),15000);
@@ -316,6 +320,36 @@ async function loadFeeds(){
   }
  }
 }
+/* ---------- mintgo odds (baked snapshot in feeds.json) ---------- */
+let _mgLoaded=false;
+async function loadMintgo(){
+ if(_mgLoaded)return; _mgLoaded=true;
+ const el=document.getElementById('mintgorows'); if(!el){_mgLoaded=false;return;}
+ el.innerHTML="loading…";
+ const clean=s=>String(s==null?"":s).replace(/[<>]/g,"");
+ const fe=v=>v==null?"?":String(Math.round(v*1e6)/1e6);
+ try{
+  const s=await (await fetch("feeds.json?t="+Date.now())).json();
+  const mg=s.mintgo;
+  if(!mg){el.innerHTML="MintGo snapshot unavailable in this bake.";return;}
+  const c=mg.counts||{}, bv=c.byVerdict||{};
+  let h=`<div style="font-size:11px;color:var(--dim)">snapshot ${mg.generated_at?new Date(mg.generated_at).toUTCString():"?"} · seen ${c.seen??"?"} · scored ${c.scored??"?"} · WATCH ${bv.WATCH||0} · SKIP ${bv.SKIP||0} · NO_FLOOR ${bv.NO_FLOOR||0}${c.excluded?` · excluded ${c.excluded}`:""}</div>`;
+  const drops=mg.drops||[];
+  const isScored=d=>d.verdict==="WATCH"||d.verdict==="SKIP"||d.score!=null;
+  const scored=drops.filter(isScored), nofloor=drops.filter(d=>!isScored(d));
+  const chipFor=v=>v==="WATCH"?"ELIGIBLE":v==="SKIP"?"NOT_ELIGIBLE":"UNKNOWN";
+  h+=scored.map(d=>`<div class="prow"><div class="ph"><span class="pname">${clean(d.name)}</span><span class="chip ${chipFor(d.verdict)}">${clean(d.verdict||"SCORED")}</span></div><div class="why">${clean(d.chain)} · mint ${fe(d.mintPriceEth)} ETH · floor ${fe(d.floorEth)} ETH · odds ${d.ratio!=null?d.ratio.toFixed(2)+"x":"—"}${d.sales1h!=null?` · ${d.sales1h} sales/1h`:""}${d.volume1hEth!=null?` · vol ${fe(d.volume1hEth)} ETH`:""}${d.score!=null?` · score ${d.score}`:""}</div>${d.opensea?`<div class="meta"><a href="${d.opensea}" target="_blank" rel="noopener">OpenSea ↗</a></div>`:""}</div>`).join("");
+  const shownNF=nofloor.slice(0,5);
+  h+=shownNF.map(d=>`<div class="prow"><div class="ph"><span class="pname">${clean(d.name)}</span><span class="chip UNKNOWN">NO_FLOOR</span></div><div class="why">${clean(d.chain)} · mint ${fe(d.mintPriceEth)} ETH · no floor data yet${d.status?` · ${clean(d.status)}`:""}</div>${d.opensea?`<div class="meta"><a href="${d.opensea}" target="_blank" rel="noopener">OpenSea ↗</a></div>`:""}</div>`).join("");
+  const totalNF=(bv.NO_FLOOR!=null)?bv.NO_FLOOR:nofloor.length;
+  const restNF=totalNF-shownNF.length;
+  if(restNF>0)h+=`<div style="font-size:11px;color:var(--dim);margin-top:4px">+ ${restNF} more drops with no floor data</div>`;
+  if(mg.excluded&&mg.excluded.length){
+   h+=mg.excluded.map(x=>`<div class="prow"><div class="ph"><span class="pname">${clean(x.name)}</span><span class="chip NOT_ELIGIBLE">EXCLUDED</span></div><div class="why">${clean(x.chain)} — ${clean(x.reason)}</div></div>`).join("");
+  }
+  el.innerHTML=h;
+ }catch(e){_mgLoaded=false;el.innerHTML="MintGo snapshot unavailable in this bake.";}
+}
 /* ---------- local subscriptions ---------- */
 function saveSub(){
  const a=document.getElementById('sub-addr').value.trim();
@@ -336,6 +370,7 @@ function showTab(name,btn){
  document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.remove('on'));
  btn.classList.add('on');
  if(name==='alerts')renderSubs();
+ if(name==='feeds')loadMintgo();
 }
 renderHealth();renderSubs();
 </script>
